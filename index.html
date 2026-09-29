@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Absensi</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1a1d21;--mu:#6b7280;--ac:#0f766e;--bd:#e3e6ea;--dg:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2026;--tx:#eceff2;--mu:#98a2ae;--ac:#2dd4bf;--bd:#2c343d;--dg:#f87171}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1b2026;--tx:#eceff2;--mu:#98a2ae;--ac:#2dd4bf;--bd:#2c343d;--dg:#f87171}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:8px 0 2px}h2{font-size:16px;margin:0 0 12px}
+p.s{color:var(--mu);margin:0 0 14px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
+input,select{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ph{border:1.5px dashed var(--bd);border-radius:12px;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;cursor:pointer;overflow:hidden;position:relative;color:var(--mu);font-size:13px;padding:6px}
+.ph img{width:100%;height:150px;object-fit:cover;border-radius:8px}
+.ph b{color:var(--tx);font-size:14px;margin-bottom:2px}
+.ph input{display:none}
+button{width:100%;padding:13px;border:0;border-radius:10px;background:var(--ac);color:#fff;font:600 15px inherit;font-family:inherit;margin-top:14px;cursor:pointer}
+:root[data-theme="dark"] button,button.dk{color:#06201d}
+button.o{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.r{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--bd);font-size:14px}
+.r small{color:var(--mu);display:block}.r a{color:var(--dg);font-size:13px;cursor:pointer}
+#m{font-size:13px;margin-top:10px;min-height:18px;color:var(--ac)}
+</style></head><body><main>
+<h1>Absensi Karyawan</h1><p class="s">Isi data, ambil foto, lalu unduh PDF bulanan.</p>
+
+<div class="c"><h2>Absen hari ini</h2>
+<label>Nama</label><input id="n" placeholder="Nama lengkap" autocomplete="name">
+<label>Cabang</label><input id="b" placeholder="Nama cabang">
+<div class="g"><div><label>Tanggal</label><input id="d" type="date"></div>
+<div><label>Shift</label><select id="sh"><option>Opening</option><option>Middle</option><option>Closing</option></select></div></div>
+<div class="g" style="margin-top:12px">
+<label class="ph" id="pi"><b>Foto Masuk</b>Ketuk untuk foto<input type="file" accept="image/*" capture="user" data-k="in"></label>
+<label class="ph" id="po"><b>Foto Pulang</b>Ketuk untuk foto<input type="file" accept="image/*" capture="user" data-k="out"></label></div>
+<div class="g"><div id="ti" style="font-size:13px;color:var(--mu);margin-top:6px"></div><div id="to" style="font-size:13px;color:var(--mu);margin-top:6px"></div></div>
+<button id="sv">Simpan absen</button><div id="m"></div></div>
+
+<div class="c"><h2>Rekap & PDF</h2>
+<div class="g"><div><label>Bulan</label><input id="mo" type="month"></div>
+<div><label>Nama</label><select id="pn"></select></div></div>
+<div id="ls" style="margin-top:8px"></div>
+<button id="pdf" class="o">Unduh PDF (tgl 1–akhir bulan)</button></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const P={in:null,out:null},T={in:'',out:''};
+let DB,recs=[];
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const hm=()=>{const t=new Date();return String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')};
+const now=new Date();$('d').value=iso(now);$('mo').value=iso(now).slice(0,7);
+try{$('n').value=localStorage.getItem('abs_n')||'';$('b').value=localStorage.getItem('abs_b')||'';$('sh').value=localStorage.getItem('abs_s')||'Opening'}catch(e){}
+
+function open(){return new Promise((ok,no)=>{try{const q=indexedDB.open('absensi',1);q.onupgradeneeded=()=>q.result.createObjectStore('r',{keyPath:'id'});q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)}catch(e){no(e)}})}
+const tx=(m,f)=>new Promise((ok,no)=>{const t=DB.transaction('r',m),s=t.objectStore('r'),r=f(s);t.oncomplete=()=>ok(r.result);t.onerror=()=>no(t.error)});
+async function load(){recs=DB?await tx('readonly',s=>s.getAll()):[];draw()}
+
+function shrink(f){return new Promise((ok,no)=>{const u=URL.createObjectURL(f),i=new Image();i.onload=()=>{const k=Math.min(1,480/Math.max(i.width,i.height)),w=Math.round(i.width*k),h=Math.round(i.height*k),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);URL.revokeObjectURL(u);ok({d:c.toDataURL('image/jpeg',.6),w,h})};i.onerror=no;i.src=u})}
+
+document.querySelectorAll('.ph input').forEach(inp=>inp.onchange=async()=>{
+ const f=inp.files[0];if(!f)return;const k=inp.dataset.k;
+ try{P[k]=await shrink(f);T[k]=hm();
+  $(k==='in'?'pi':'po').innerHTML='<img src="'+P[k].d+'">';
+  $(k==='in'?'ti':'to').textContent='Jam '+(k==='in'?'masuk ':'pulang ')+T[k];
+ }catch(e){msg('Foto gagal dibaca, coba lagi.')}});
+
+function msg(t){$('m').textContent=t}
+$('sv').onclick=async()=>{
+ const n=$('n').value.trim(),b=$('b').value.trim(),d=$('d').value;
+ if(!n||!b||!d)return msg('Nama, cabang, dan tanggal wajib diisi.');
+ if(!P.in&&!P.out)return msg('Ambil minimal satu foto (masuk atau pulang).');
+ if(!DB)return msg('Penyimpanan tidak tersedia di browser ini.');
+ const id=d+'|'+n.toLowerCase();
+ const old=recs.find(r=>r.id===id)||{};
+ const r={id,date:d,name:n,branch:b,shift:$('sh').value,
+  inP:P.in||old.inP||null,inT:P.in?T.in:(old.inT||''),outP:P.out||old.outP||null,outT:P.out?T.out:(old.outT||'')};
+ try{await tx('readwrite',s=>s.put(r));
+  localStorage.setItem('abs_n',n);localStorage.setItem('abs_b',b);localStorage.setItem('abs_s',r.shift)}catch(e){}
+ P.in=P.out=null;T.in=T.out='';
+ $('pi').innerHTML='<b>Foto Masuk</b>Ketuk untuk foto<input type="file" accept="image/*" capture="user" data-k="in">';
+ $('po').innerHTML='<b>Foto Pulang</b>Ketuk untuk foto<input type="file" accept="image/*" capture="user" data-k="out">';
+ $('ti').textContent=$('to').textContent='';
+ document.querySelectorAll('.ph input').forEach(i=>i.onchange=bindPh(i));
+ msg('Tersimpan ✓ ('+d+')');await load()};
+function bindPh(inp){return async()=>{const f=inp.files[0];if(!f)return;const k=inp.dataset.k;
+ try{P[k]=await shrink(f);T[k]=hm();$(k==='in'?'pi':'po').innerHTML='<img src="'+P[k].d+'">';$(k==='in'?'ti':'to').textContent='Jam '+(k==='in'?'masuk ':'pulang ')+T[k]}catch(e){msg('Foto gagal dibaca.')}}}
+
+function draw(){
+ const mo=$('mo').value,mr=recs.filter(r=>r.date.startsWith(mo));
+ const names=[...new Set(mr.map(r=>r.name))],cur=$('pn').value;
+ $('pn').innerHTML=names.length?names.map(x=>'<option>'+esc(x)+'</option>').join(''):'<option value="">(belum ada data)</option>';
+ if(names.includes(cur))$('pn').value=cur;
+ const rows=mr.filter(r=>r.name===$('pn').value).sort((a,b)=>a.date<b.date?-1:1);
+ $('ls').innerHTML=rows.length?rows.map(r=>'<div class="r"><div><b>'+r.date.slice(8)+'</b> · '+esc(r.shift)+' · '+esc(r.branch)+'<small>Masuk '+(r.inT||'—')+' · Pulang '+(r.outT||'—')+'</small></div><a data-id="'+esc(r.id)+'">Hapus</a></div>').join(''):'<p class="s">Belum ada absen di bulan ini.</p>';
+ $('ls').querySelectorAll('a').forEach(a=>a.onclick=async()=>{if(confirm('Hapus absen ini?')){await tx('readwrite',s=>s.delete(a.dataset.id));load()}})}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('mo').onchange=draw;$('pn').onchange=draw;
+
+$('pdf').onclick=async()=>{
+ const mo=$('mo').value,nm=$('pn').value;
+ if(!nm)return alert('Belum ada data untuk bulan ini.');
+ const list=recs.filter(r=>r.date.startsWith(mo)&&r.name===nm),by={};list.forEach(r=>by[+r.date.slice(8)]=r);
+ const [Y,M]=mo.split('-').map(Number),days=new Date(Y,M,0).getDate();
+ const bulan=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][M-1];
+ const {jsPDF}=window.jspdf,doc=new jsPDF('p','mm','a4'),X=[10,22,58,129],W=[12,36,71,71],RH=25;
+ const head=y=>{doc.setFillColor(15,118,110);doc.rect(10,y,190,8,'F');doc.setTextColor(255);doc.setFontSize(10);doc.setFont(undefined,'bold');
+  ['Tgl','Shift / Cabang','Absen Masuk','Absen Pulang'].forEach((t,i)=>doc.text(t,X[i]+2,y+5.5));doc.setTextColor(0);return y+8};
+ doc.setFontSize(16);doc.setFont(undefined,'bold');doc.text('LAPORAN ABSENSI',10,16);
+ doc.setFontSize(10);doc.setFont(undefined,'normal');
+ doc.text('Nama    : '+nm,10,24);doc.text('Periode : '+bulan+' '+Y,10,30);
+ const hadir=Object.keys(by).length;doc.text('Total hadir: '+hadir+' hari',10,36);
+ let y=head(41);
+ const fit=(p,bw,bh)=>{const k=Math.min(bw/p.w,bh/p.h);return[p.w*k,p.h*k]};
+ for(let d=1;d<=days;d++){
+  if(y+RH>287){doc.addPage();y=head(12)}
+  const r=by[d];doc.setDrawColor(200);doc.rect(10,y,190,RH);
+  X.slice(1).forEach(x=>doc.line(x,y,x,y+RH));
+  doc.setFontSize(11);doc.setFont(undefined,'bold');doc.text(String(d),X[0]+2,y+8);
+  doc.setFont(undefined,'normal');
+  if(!r){doc.setTextColor(150);doc.setFontSize(9);doc.text('-',X[2]+2,y+8);doc.text('-',X[3]+2,y+8);doc.setTextColor(0);y+=RH;continue}
+  doc.setFontSize(10);doc.text(r.shift,X[1]+2,y+8);doc.setFontSize(8);doc.text(doc.splitTextToSize(r.branch,W[1]-4),X[1]+2,y+13);
+  [[r.inP,r.inT,2],[r.outP,r.outT,3]].forEach(([p,t,i])=>{
+   doc.setFontSize(11);doc.text(t||'-',X[i]+3,y+8);
+   if(p){const[w,h]=fit(p,20,RH-4);doc.addImage(p.d,'JPEG',X[i]+W[i]-w-3,y+2,w,h)}});
+  y+=RH}
+ const pages=doc.getNumberOfPages();for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(120);doc.text('Hal '+i+'/'+pages,190,292)}
+ const fn='Absensi_'+nm.replace(/\s+/g,'_')+'_'+mo+'.pdf',blob=doc.output('blob');
+ try{const dl=window.claude?await window.claude.use('downloads'):null;
+  if(dl){await dl.save({filename:fn,data:blob})}
+  else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fn;a.click()}
+ }catch(e){if(!e||e.code!=='declined')alert('PDF gagal disimpan: '+(e&&e.message||e))}};
+
+(async()=>{try{DB=await open()}catch(e){msg('Penyimpanan tidak tersedia.')}load()})();
+</script></body></html>
